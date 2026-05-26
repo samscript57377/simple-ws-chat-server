@@ -31,10 +31,27 @@ generateJoinMessage = (username) => {
     return message[Math.floor(Math.random() * message.length)];
 };
 
+generateName = () => {
+    return "Guest" + Math.floor(Math.random() * 1000);
+};
+
+generateLeaveMessage = (username) => {
+    const message = [
+        `${username} left the room.`,
+        `${username} said goodbye!`,
+        `${username} has left the chat.`,
+        `See you later, ${username}!`,
+        `${username} disconnected.`,
+        `${username} has left us.`,
+        `Bye ${username}!`,
+        `${username} is now offline.`,
+    ];
+    return message[Math.floor(Math.random() * message.length)];
+};
 wsserver.on('connection', (ws) => {
     const clientId = typeof randomUUID === 'function' ? randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
     console.log('Client connected: ', ws._socket.remoteAddress, ' with client ID: ', clientId);
-    clients[clientId] = "unnamed_user" + Math.floor(Math.random() * 1000);
+    clients[clientId] = generateName();
     ws.id = clientId;
 
     ws.on('message', (data) => {
@@ -50,7 +67,7 @@ wsserver.on('connection', (ws) => {
         const { type, roomId, username, sender, str, style, emoji } = messageObj;
 
         if (type === 'join') {
-            const finalUsername = username || clients[ws.id];
+            const finalUsername = username || clients[ws.id] || generateName();
             clients[ws.id] = finalUsername;
 
             if (!rooms[roomId]) {
@@ -74,6 +91,38 @@ wsserver.on('connection', (ws) => {
                     if (client.readyState === websocket.OPEN) {
                         client.send(JSON.stringify({ type: "join", message: joinMsg }));
                     }
+                }
+            }
+            return;
+        }
+
+        if (type === 'leave') {
+            let leaveRoomId;
+            for (const id in rooms) {
+                if (rooms[id].clients.includes(ws)) {
+                    leaveRoomId = id;
+                    break;
+                }
+            }
+            
+            if (leaveRoomId) {
+                rooms[leaveRoomId].clients = rooms[leaveRoomId].clients.filter(client => client !== ws);
+                const username = sender?.username || clients[ws.id] || generateName();
+                const leaveMsg = {
+                    sender: { username: "Chatguard", uuid: null, color: "#9b39d5" },
+                    str: generateLeaveMessage(username),
+                    style: { color: "#22283b" }
+                };
+                rooms[leaveRoomId].messages.push(leaveMsg);
+                
+                for (const client of rooms[leaveRoomId].clients) {
+                    if (client.readyState === websocket.OPEN) {
+                        client.send(JSON.stringify({ type: "join", message: leaveMsg }));
+                    }
+                }
+                
+                if (rooms[leaveRoomId].clients.length === 0) {
+                    delete rooms[leaveRoomId];
                 }
             }
             return;
